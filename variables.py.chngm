@@ -1,0 +1,43 @@
+# DEFAULT BASE DIRS
+
+# LOG AND RESULTS CSV FILE
+BASE_LOG_CSV_PATH = '/home/noa/Documents/UFRGS/PROJECTS/CIDIA19/test-script/data/status.csv'
+LOG_CSV_COLUMNS = ['name', 'to_nifti', 'segmented', 'to_slices_3d', 'to_video', 'predicted', 'percentage', 'axis_detail', 'axis_qty']
+AXIS = 4
+
+# DICOM -> NIFTI
+BASE_DICOM_INPUT_DIR = '/path/by/default/dicom/exame-pulmao'
+BASE_NII_ORIGINAL_OUPUT_DIR = '/path/by/default/nifti/exame-pulmao'
+
+# PHNN SEGMENTATION
+PHNN_EXECUTABLE_PATH = '/path/to/python/file/to/execute/segmentation/lun_segmentation.py' 
+BASE_SEGMENTED_OUTPUT_DIR = '/path/by/default/to/segmented/exame-pulmao'
+PHNN_THRESHOLD = 0.75
+PHNN_BATCH_SIZE = 10
+
+# MITK
+# DEFAULT VALUES FOR VIDEO CREATION
+BASE_MITK_VIDEO_OUPUT_DIR = '/path/by/default/to/mitk/videos'
+BASE_MITK_VIEWS_OUTPUT_DIR = '/path/by/default/to/slices/exame-pulmao'
+MITK_TRANSFER_FUNCTION_PATH = 'path/to/mitk/transfer/function/transfer-function.xml'
+MITK_VIDEO_EXECUTABLE_PATH = '/home/noa/Documents/UFRGS/PROJECTS/CIDIA19/covid-gui-old/examples/VideoMaker/build/videomaker' 
+MITK_VIDEO_WIDTH = 512 #px
+MITK_VIDEO_HEIGHT = 450 #px
+MITK_VIDEO_TIME = 10.0 # In seconds
+MITK_VIDEO_FPS = 30
+
+# DEFAULT VALUES FOR SLICES CREATION
+MITK_VIEWS_EXECUTABLE_PATH = '/home/noa/Documents/UFRGS/PROJECTS/CIDIA19/covid-gui-old/examples/ScreenshotUtilities/build/screenshot-axis-views' 
+MITK_VIEWS_WIDTH = 448 #px
+MITK_VIEWS_HEIGHT = 448 #px
+MITK_VIEWS_LENGTH = 82 # If not even is going to add 1 till MITK_VIEWS_LENGTH/2 is odd
+MITK_VIEWS_AXIS = 4 # The view from 1 till 4
+
+# RESNET DEFAULT VALUES FOR LOAD AND EXECUTE MODEL FOR PREDICTIONS
+PREDICTION_MODEL_PATH = '/path/to/model/script/file.py'
+PREDICTION_MODEL = 'resnet101'
+PREDICTION_LEGEND_PATH = '/path/to/legend/file.npy'  
+PREDICTION_AXIS = 4
+PREDICTION_CLASSES = 2
+PREDICTION_WIDTH = 448
+PREDICTION_HEIGHT = 488
