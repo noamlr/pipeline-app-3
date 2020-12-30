@@ -29,9 +29,8 @@ def check_new_patients(df, base_dir):
         return []
 
     df_patients = df['name'].to_list()
-    ls_dir = glob.glob(f'{base_dir}/*/')
+    ls_dir = glob.glob(f'{base_dir}/*')
     dir_patients = [ls.split('/')[-1] for ls in ls_dir]
-    
     diff = set(dir_patients) - set(df_patients)
     list_diff = list(diff)
     
@@ -43,8 +42,8 @@ def insert_or_update_row(df, patient=None, column=None, value=None):
         return False
 
     # Search the row
-    if patient in df['patient']:
-        df.loc[df.index[df['patient']==patient], column] = value
+    if patient in df['name']:
+        df.loc[df.index[df['name']==patient], column] = value
     # If not exists, insert the row
     else:
         row = [patient] + [value if LOG_CSV_COLUMNS[i+1] == column else None for i in range(len(LOG_CSV_COLUMNS)-1)]
@@ -53,8 +52,12 @@ def insert_or_update_row(df, patient=None, column=None, value=None):
     return df
         
 
-def run_in_shell(command): 
-    process = subprocess.Popen(command, shell=True, stdout=subprocess.PIPE)
+def run_in_shell(command, is_python=False): 
+    # subprocess.call(f'eval "$(conda shell.bash hook)" && conda activate py36 && echo $CONDA_DEFAULT_ENV && {command} && conda deactivate', shell=True,  executable="/bin/bash")
+    if is_python is True:
+        process = subprocess.Popen(f'eval "$(conda shell.bash hook)" && conda activate py36 && echo $CONDA_DEFAULT_ENV && {command} && conda deactivate', shell=True,  executable="/bin/bash")
+    else:
+        process = subprocess.Popen(command, shell=True, stdout=subprocess.PIPE)
     process.wait()
     print(process.returncode)
     return "OK"
@@ -69,17 +72,17 @@ def convert_dicom_to_nifti(base_input_dir=None, base_output_dir=None, patient=No
     else:
         patient_dir = f'{BASE_DICOM_INPUT_DIR}/{patient}'
 
-    if base_output_dir is not None:
-        BASE_NII_ORIGINAL_DIR = base_output_dir
+    if base_output_dir is None:
+        base_output_dir = BASE_NII_ORIGINAL_OUTPUT_DIR
 
-    if not os.path.exists(BASE_NII_ORIGINAL_DIR):
-        return (False, f'Path {BASE_NII_ORIGINAL_DIR} does not exist')
+    if not os.path.exists(BASE_NII_ORIGINAL_OUTPUT_DIR):
+        return (False, f'Path {base_output_dir} does not exist')
     if not os.path.exists(patient_dir):
         return (False, f'Path {patient_dir} does not exist')
     
     try:
         # Creating OUTPUT path
-        output_dir = f'{BASE_NII_ORIGINAL_DIR}/{patient}'
+        output_dir = f'{base_output_dir}/{patient}'
         if not os.path.exists(output_dir):
             os.mkdir(output_dir)
     
@@ -96,7 +99,7 @@ def convert_dicom_to_nifti(base_input_dir=None, base_output_dir=None, patient=No
             for dicom_path in dicom_paths:
                 ct_name = dicom_path.split('/')[-1]
                 out_file = f'{output_dir}/{ct_name}.nii.gz'
-                print(f'input: {dicom_path}\noutput: {out_file}')
+                print(f'1input: {dicom_path}\noutput: {out_file}')
                 dicom2nifti.dicom_series_to_nifti(dicom_path, out_file, reorient_nifti=False)
         else:
             ct_name = patient_dir.split('/')[-1]
@@ -106,8 +109,8 @@ def convert_dicom_to_nifti(base_input_dir=None, base_output_dir=None, patient=No
 
 
         return (True, '')
-    except:
-        return (False, 'Error')
+    except Exception as e:
+        return (False, f'Error: {e}')
 
 
 def phnn_segmentation(base_nii_dir=None, base_output_dir=None, patient=None, threshold=None, batch_size=None):
@@ -116,7 +119,7 @@ def phnn_segmentation(base_nii_dir=None, base_output_dir=None, patient=None, thr
     if base_nii_dir is not None:
         input_dir = f'{base_nii_dir}/{patient}'
     else:
-        input_dir = f'{BASE_DICOM_INPUT_DIR}/{patient}'
+        input_dir = f'{BASE_NII_ORIGINAL_OUTPUT_DIR}/{patient}'
     if base_output_dir is not None:
         output_dir = base_output_dir
 
@@ -132,13 +135,13 @@ def phnn_segmentation(base_nii_dir=None, base_output_dir=None, patient=None, thr
         batch_size = PHNN_BATCH_SIZE
         
     try:
-        command = f'{BASE_NII_ORIGINAL_OUPUT_DIR} --directory_in {input_dir} --directory_out {output_dir} --batch_size {batch_size} --threshold {threshold}'
+        command = f'python {PHNN_EXECUTABLE_PATH} --directory_in {input_dir} --directory_out {output_dir} --batch_size {batch_size} --threshold {threshold}'
         print(command)
-        # phnn_seg = run_in_shell(command)
-        # print phnn_seg
+        phnn_seg = run_in_shell(command, is_python=True)
+        print(phnn_seg)
         return (True, '')
-    except:
-        return (False, 'Error')
+    except Exception as e:
+        return (False, f'Error: {e}')
 
 
 def mitk_views_maker(base_nii_dir=None, base_output_dir=None, patient=None, tf_path=None, width=None, height=None, slices=None, axis=None):
@@ -147,7 +150,7 @@ def mitk_views_maker(base_nii_dir=None, base_output_dir=None, patient=None, tf_p
     if base_nii_dir is not None:
         input_dir = f'{base_nii_dir}/{patient}'
     else:
-        input_dir = f'{BASE_DICOM_INPUT_DIR}/{patient}'
+        input_dir = f'{BASE_SEGMENTED_OUTPUT_DIR}/{patient}'
     if base_output_dir is not None:
         output_dir = base_output_dir
     if tf_path is None:
@@ -192,14 +195,16 @@ def mitk_views_maker(base_nii_dir=None, base_output_dir=None, patient=None, tf_p
 
         #### Iterate over nifti and build command
         nii_list = glob.glob(f'{input_dir}/*/crop_by_mask*.nii.gz')
+        print(f'{input_dir}/*/crop_by_mask*.nii.gz')
+        print(nii_list)
         for ct_image in nii_list:
             command = f'{MITK_VIEWS_EXECUTABLE_PATH} -tf {tf_path} -i {ct_image} -o {output_dir} -w {width} -h {height} -c {slices} -a{axis}'
             print(command)
             mitk_views = run_in_shell(command)
             print(mitk_views)
         return (True, '')
-    except:
-        return (False, 'Error')
+    except Exception as e:
+        return (False, f'Error: {e}')
 
 
 def mitk_video_maker(base_nii_dir=None, base_output_dir=None, patient=None, tf_path=None, width=None, height=None, time=None, fps=None):
@@ -239,11 +244,11 @@ def mitk_video_maker(base_nii_dir=None, base_output_dir=None, patient=None, tf_p
             mitk_views = run_in_shell(command)
             print(mitk_views)
         return (True, '')
-    except:
-        return (False, 'Error')
+    except Exception as e:
+        return (False, f'Error: {e}')
 
 
-def process_prediction(base_model_dir=None, base_legend_dir=None, base_slices_dir=None, base_model_dir=None, patient=None, width=None, height=None, axis=None):
+def process_prediction(base_model_dir=None, base_legend_dir=None, base_slices_dir=None, patient=None, width=None, height=None, axis=None):
     input_dir = ''
     if base_slices_dir is not None:
         input_dir = f'{base_slices_dir}/{patient}'
@@ -278,8 +283,8 @@ def process_prediction(base_model_dir=None, base_legend_dir=None, base_slices_di
         if result['error'] is not None:
             return (False, result)
         return (True, result)
-    except:
-        return (False, {'error': 'Try/Except error'})
+    except Exception as e:
+        return (False, f'Error: {e}')
 
 
 if __name__ == "__main__":
@@ -287,26 +292,32 @@ if __name__ == "__main__":
     list_patients = check_new_patients(df, BASE_DICOM_INPUT_DIR)
 
     for patient in list_patients:
+        print(patient)
         # CALL DICOM -> NIFTI
-        a = '/home/noa/Documents/UFRGS/PROJECTS/CIDIA19/test-script/data/dicom-original/exame-pulmao'
-        b = '/home/noa/Documents/UFRGS/PROJECTS/CIDIA19/test-script/data/nii-original/exame-pulmao'
-        bool_result, text_out = convert_dicom_to_nifti(base_input_dir=a, base_output_dir=b, patient=patient, is_hmv=True)
+        # a = '/home/noa/Documents/UFRGS/PROJECTS/CIDIA19/test-script/data/dicom-original/exame-pulmao'
+        # b = '/home/noa/Documents/UFRGS/PROJECTS/CIDIA19/test-script/data/nii-original/exame-pulmao'
+        a, b = None, None
+        if len(patient) < 5: is_hmv = True
+        else: is_hmv = False
+        bool_result, text_out = convert_dicom_to_nifti(base_input_dir=a, base_output_dir=b, patient=patient, is_hmv=is_hmv)
         if bool_result:
             df = insert_or_update_row(df, patient=patient, column='to_nifti', value=True)
         else:
             print(text_out)
     
         # CALL PHNN SEGMENTATION
-        c = '/home/noa/Documents/UFRGS/PROJECTS/CIDIA19/test-script/data/nii-segmented/exame-pulmao'
+        # c = '/home/noa/Documents/UFRGS/PROJECTS/CIDIA19/test-script/data/nii-segmented/exame-pulmao'
+        c = None
         bool_result, text_out = phnn_segmentation(base_nii_dir=b, base_output_dir=c, patient=patient, threshold=None, batch_size=None)
         if bool_result:
             df = insert_or_update_row(df, patient=patient, column='segmented', value=True)
         else:
-            print(text_out)
+            print(f'message from phnn segmentation: {text_out}')
 
         # CALL MITK VIEWS
-        d = '/home/noa/Documents/UFRGS/PROJECTS/CIDIA19/test-script/data/slices2d/exame-pulmao'
-        e = '/home/noa/Documents/UFRGS/PROJECTS/CIDIA19/test-script/data/tf/tf12_2.xml'
+        # d = '/home/noa/Documents/UFRGS/PROJECTS/CIDIA19/test-script/data/slices2d/exame-pulmao'
+        # e = '/home/noa/Documents/UFRGS/PROJECTS/CIDIA19/test-script/data/tf/tf12_2.xml'
+        d, e = None, None
         bool_result, text_out = mitk_views_maker(base_nii_dir=c, base_output_dir=d, patient=patient, tf_path=e, width=None, height=None, slices=None, axis=None)
         if bool_result:
             df = insert_or_update_row(df, patient=patient, column='to_slices_3d', value=True)
@@ -314,7 +325,8 @@ if __name__ == "__main__":
             print(text_out)
 
         # CALL MITK VIDEOS
-        f = '/home/noa/Documents/UFRGS/PROJECTS/CIDIA19/test-script/data/videos'
+        # f = '/home/noa/Documents/UFRGS/PROJECTS/CIDIA19/test-script/data/videos'
+        f = None
         bool_result, text_out = mitk_video_maker(base_nii_dir=c, base_output_dir=f, patient=patient, tf_path=e, width=None, height=None, time=None, fps=None)
         if bool_result:
             df = insert_or_update_row(df, patient=patient, column='to_video', value=True)
