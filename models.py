@@ -10,6 +10,8 @@ from tensorflow.keras import Model
 from tensorflow.keras.models import load_model 
 from tensorflow.keras.optimizers import Adam
 
+import sys
+
 class ModelCidia():
     def __init__(self, model_path, legend_path, slices_path, model_name, width, height):
         self.MODEL_PATH = model_path
@@ -56,27 +58,33 @@ class ModelCidia():
 
     def test_patient(self, axis, patient):
         try:
+            result = {}
             prediction = []
-            for i range(axis):
+            total_images = 0
+            positive_count = []
+            negative_count = []
+            axis_detail = [] 
+            for i in range(axis):
                 t_axis=i+1
                 
                 # Check legend path
                 legend_path = f'{self.LEGEND_PATH}/axis{t_axis}/legend.npy'
                 class_legend = None
-                if not os.path.exists()
+                if os.path.exists(legend_path):
                     class_legend = np.load(legend_path, allow_pickle=True).item()
                     class_legend = dict((v, k) for k,v in class_legend.items())
                 
                 axis_name = f'axis{t_axis}'
                 self.MODEL = load_model(f'{self.MODEL_PATH}/{axis_name}/my_checkpoint')
-                patient_dir = f'{self.SLICES_PATH}/{patient}'
+                patient_dir = f'{self.SLICES_PATH}/{patient}/{axis_name}/'
                 if not os.path.exists(patient_dir):
-                    return (False, f'Path: {patient_dir} does not exist')
+                    return (False, {'error': f'Path: {patient_dir} does not exist'})
                 imgs_filename = sorted(os.listdir(patient_dir))
-                test_df = pd.DataFrame({'filename': imgs_filename[:]})
+                test_filenames = imgs_filename[:] 
+                test_df = pd.DataFrame({'filename': test_filenames})
 
                 nb_samples = test_df.shape[0]
-
+                total_images = nb_samples
                 # DataGenerator:
                 test_gen = ImageDataGenerator(rescale=1./255)
                 test_generator = test_gen.flow_from_dataframe(
@@ -85,7 +93,7 @@ class ModelCidia():
                     x_col='filename',
                     y_col=None,
                     class_mode=None,
-                    target_size=(self.WIDTH, self.HEIGTH),
+                    target_size=(self.WIDTH, self.HEIGHT),
                     batch_size=16,
                     shuffle=False
                 )
@@ -93,11 +101,29 @@ class ModelCidia():
                 test_df['predicted'] = [np.where(pr == np.max(pr))[0][0] for pr in predict]
                 test_df['predicted'] = test_df['predicted'].replace(class_legend)
                 test_df['count'] = 1
-                test_df = test_df.group_by('predicted', as_index=False)['count'].count()
+                test_df = test_df.groupby('predicted', as_index=False)['count'].count()
+                axis_detail.append(test_df.iloc[0]['predicted'])
+                if test_df.iloc[0]['predicted'] == 'covid':
+                    positive_count.append(test_df.iloc[0]['count'])
+                    negative_count.append((total_images - test_df.iloc[0]['count']))
+                else:
+                    negative_count.append(test_df.iloc[0]['count'])
+                    positive_count.append((total_images - test_df.iloc[0]['count']))
                 print(test_df)
+            perc_pos = (sum(positive_count) / (axis*total_images)) * 100.0
+            perc_neg = (sum(negative_count) / (axis*total_images)) * 100.0
+            result['percentage'] = perc_pos
+            result['axis_detail'] = axis_detail
+            result['axis_qty'] = axis
+            if perc_pos < perc_neg:
+                result['predicted'] = 'non covid'
+            else: 
+                result['predicted'] = 'covid'
+            return (True, result)
 
-        except:
-            return (False, 'Except error testing patient')
+        except Exception as e:
+            et, eo, et = sys.exc_info()
+            return (False, {'error':f'error: {e}\n\n{et}\n\n{eo}\n\n{et}'})
             
 
     def get_file_path(self, search_filter=''):

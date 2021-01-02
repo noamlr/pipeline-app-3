@@ -8,6 +8,7 @@ import shutil
 
 #import time
 from variables import *
+from models import *
 
 
 def get_status_csv():
@@ -40,10 +41,10 @@ def check_new_patients(df, base_dir):
 def insert_or_update_row(df, patient=None, column=None, value=None):
     if patient is None or column is None or value is None:
         return False
-
+    
     # Search the row
-    if patient in df['name']:
-        df.loc[df.index[df['name']==patient], column] = value
+    if patient in df['name'].to_list():
+        df.at[df.index[df['name']==patient][0], column] = value
     # If not exists, insert the row
     else:
         row = [patient] + [value if LOG_CSV_COLUMNS[i+1] == column else None for i in range(len(LOG_CSV_COLUMNS)-1)]
@@ -200,7 +201,7 @@ def mitk_views_maker(base_nii_dir=None, base_output_dir=None, patient=None, tf_p
         for ct_image in nii_list:
             command = f'{MITK_VIEWS_EXECUTABLE_PATH} -tf {tf_path} -i {ct_image} -o {output_dir} -w {width} -h {height} -c {slices} -a{axis}'
             print(command)
-            mitk_views = run_in_shell(command)
+            mitk_views = run_in_shell(command, is_python=False)
             print(mitk_views)
         return (True, '')
     except Exception as e:
@@ -209,11 +210,11 @@ def mitk_views_maker(base_nii_dir=None, base_output_dir=None, patient=None, tf_p
 
 def mitk_video_maker(base_nii_dir=None, base_output_dir=None, patient=None, tf_path=None, width=None, height=None, time=None, fps=None):
     input_dir = ''
-    output_dir = BASE_MITK_VIEWS_OUTPUT_DIR
+    output_dir = BASE_MITK_VIDEO_OUTPUT_DIR
     if base_nii_dir is not None:
         input_dir = f'{base_nii_dir}/{patient}'
     else:
-        input_dir = f'{BASE_DICOM_INPUT_DIR}/{patient}'
+        input_dir = f'{BASE_SEGMENTED_OUTPUT_DIR}/{patient}'
     if base_output_dir is not None:
         output_dir = base_output_dir
     if tf_path is None:
@@ -241,30 +242,27 @@ def mitk_video_maker(base_nii_dir=None, base_output_dir=None, patient=None, tf_p
         for ct_image in nii_list:
             command = f'{MITK_VIDEO_EXECUTABLE_PATH} -tf {tf_path} -i {ct_image} -o {output_dir}/{patient}.mp4 -w {width} -h {height} -t {time} -f {fps}'
             print(command)
-            mitk_views = run_in_shell(command)
+            mitk_views = run_in_shell(command, is_python=False)
             print(mitk_views)
         return (True, '')
     except Exception as e:
         return (False, f'Error: {e}')
 
 
-def process_prediction(base_model_dir=None, base_legend_dir=None, base_slices_dir=None, patient=None, width=None, height=None, axis=None):
-    input_dir = ''
-    if base_slices_dir is not None:
-        input_dir = f'{base_slices_dir}/{patient}'
-    else:
-        input_dir = f'{BASE_MITK_VIEWS_OUTPUT_DIR}/{patient}'
+def process_prediction(base_model_dir=None, base_legend_dir=None, base_slices_dir=None, patient=None, width=None, height=None, axis=None, classes=None):
+    if base_slices_dir is None:
+        base_slices_dir = BASE_MITK_VIEWS_OUTPUT_DIR
     if base_model_dir is None:
         base_model_dir = PREDICTION_MODEL_PATH
     if base_legend_dir is None:
         base_legend_dir = PREDICTION_LEGEND_PATH
     
-    if not os.path.exists(input_dir):
-        return (False, f'Path {input_dir} does not exist')
+    if not os.path.exists(base_slices_dir):
+        return (False, {'error': f'Path {base_slices_dir} does not exist'})
     if not os.path.exists(base_model_dir):
-        return (False, f'Path {base_model_dir} does not exist')
+        return (False, {'error': f'Path {base_model_dir} does not exist'})
     if not os.path.exists(base_legend_dir):
-        return (False, f'Path {base_legend_dir} does not exist')
+        return (False, {'error': f'Path {base_legend_dir} does not exist'})
     
     if width is None:
         width = PREDICTION_WIDTH
@@ -277,20 +275,19 @@ def process_prediction(base_model_dir=None, base_legend_dir=None, base_slices_di
     
     try:
         #### Iterate over nifti and build command
-        if not model:
-            model = ModelCidia(input_model_path, input_legend_path, input_slices_path, model, width, height)
-        result = model.test(axis, patient)
-        if result['error'] is not None:
+        model_name = 'resnet101'
+        model_cidia = ModelCidia(base_model_dir, base_legend_dir, base_slices_dir, model_name, width, height)
+        bool_status, result = model_cidia.test_patient(axis, patient)
+        if not bool_status:
             return (False, result)
         return (True, result)
     except Exception as e:
-        return (False, f'Error: {e}')
+        return (False, {'error': f'Error: {e}'})
 
 
 if __name__ == "__main__":
     df = get_status_csv()
     list_patients = check_new_patients(df, BASE_DICOM_INPUT_DIR)
-
     for patient in list_patients:
         print(patient)
         # CALL DICOM -> NIFTI
@@ -334,15 +331,19 @@ if __name__ == "__main__":
             print(text_out)
 
         # CALL PROCESS PREDICT
+        g, h = None, None
+        w, h, ax, cl = None, None, None, None
+        bool_result, text_out = process_prediction(base_model_dir=g, base_legend_dir=h, base_slices_dir=d, patient=patient, width=w, height=h, axis=ax, classes=cl)
         if bool_result:
             df = insert_or_update_row(df, patient=patient, column='predicted', value=text_out['predicted'])
             df = insert_or_update_row(df, patient=patient, column='percentage', value=text_out['percentage'])
             df = insert_or_update_row(df, patient=patient, column='axis_detail', value=text_out['axis_detail'])
             df = insert_or_update_row(df, patient=patient, column='axis_qty', value=text_out['axis_qty'])
+            print(df)
         else:
             print(text_out['error'])
 
-
+    save_status_csv(df)
 
     
 
