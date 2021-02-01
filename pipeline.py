@@ -1,12 +1,15 @@
 import dicom2nifti
+import pydicom
 import glob
 import os
 import pandas as pd
+import json
+import requests
 
 import subprocess
 import shutil
 
-#import time
+import time
 from variables import *
 from models import *
 
@@ -58,7 +61,8 @@ def run_in_shell(command, is_python=False):
     if is_python is True:
         process = subprocess.Popen(f'eval "$(conda shell.bash hook)" && conda activate py36 && echo $CONDA_DEFAULT_ENV && {command} && conda deactivate', shell=True,  executable="/bin/bash")
     else:
-        process = subprocess.Popen(command, shell=True, stdout=subprocess.PIPE)
+        process = subprocess.Popen(f'export DISPLAY=:1 && {command}', shell=True,  executable="/bin/bash")
+        # process = subprocess.Popen(command, shell=True,  stdout=subprocess.PIPE)
     process.wait()
     print(process.returncode)
     return "OK"
@@ -95,21 +99,32 @@ def convert_dicom_to_nifti(base_input_dir=None, base_output_dir=None, patient=No
         output_dir = f'{output_dir}/{ct_sub_path_name}'
         if not os.path.exists(output_dir):
             os.mkdir(output_dir)
+        study_id = []
         if is_hmv is True:
             dicom_paths = glob.glob(f'{patient_dir}/*')
             for dicom_path in dicom_paths:
+                ### Getting study_id
+                single_dicom_path = glob.glob(f'{dicom_path}/*')[0]
+                ds = pydicom.read_file(single_dicom_path)
+                study_id.append(ds.StudyInstanceUID)
+
                 ct_name = dicom_path.split('/')[-1]
                 out_file = f'{output_dir}/{ct_name}.nii.gz'
                 print(f'1input: {dicom_path}\noutput: {out_file}')
                 dicom2nifti.dicom_series_to_nifti(dicom_path, out_file, reorient_nifti=False)
         else:
+            ### Getting study_id
+            single_dicom_path = glob.glob(f'{patient_dir}/*')[0]
+            ds = pydicom.read_file(single_dicom_path)
+            study_id.append(ds.StudyInstanceUID)
+            
             ct_name = patient_dir.split('/')[-1]
             out_file = f'{output_dir}/{ct_name}.nii.gz'
             print(f'input: {patient_dir}\noutput: {out_file}')
             dicom2nifti.dicom_series_to_nifti(patient_dir, out_file, reorient_nifti=False)
 
 
-        return (True, '')
+        return (True, study_id)
     except Exception as e:
         return (False, f'Error: {e}')
 
@@ -199,7 +214,8 @@ def mitk_views_maker(base_nii_dir=None, base_output_dir=None, patient=None, tf_p
         print(f'{input_dir}/*/crop_by_mask*.nii.gz')
         print(nii_list)
         for ct_image in nii_list:
-            command = f'{MITK_VIEWS_EXECUTABLE_PATH} -tf {tf_path} -i {ct_image} -o {output_dir} -w {width} -h {height} -c {slices} -a{axis}'
+            command = f'vglrun {MITK_VIEWS_EXECUTABLE_PATH} -tf {tf_path} -i {ct_image} -o {output_dir} -w {width} -h {height} -c {slices} -a{axis}'
+            # command = f'{MITK_VIEWS_EXECUTABLE_PATH} -tf {tf_path} -i {ct_image} -o {output_dir} -w {width} -h {height} -c {slices} -a{axis}'
             print(command)
             mitk_views = run_in_shell(command, is_python=False)
             print(mitk_views)
@@ -240,11 +256,12 @@ def mitk_video_maker(base_nii_dir=None, base_output_dir=None, patient=None, tf_p
         #### Iterate over nifti and build command
         nii_list = glob.glob(f'{input_dir}/*/crop_by_mask*.nii.gz')
         for ct_image in nii_list:
-            command = f'{MITK_VIDEO_EXECUTABLE_PATH} -tf {tf_path} -i {ct_image} -o {output_dir}/{patient}.mp4 -w {width} -h {height} -t {time} -f {fps}'
+            command = f'vglrun {MITK_VIDEO_EXECUTABLE_PATH} -tf {tf_path} -i {ct_image} -o {output_dir}/{patient}.mp4 -w {width} -h {height} -t {time} -f {fps}'
+            # command = f'{MITK_VIDEO_EXECUTABLE_PATH} -tf {tf_path} -i {ct_image} -o {output_dir}/{patient}.mp4 -w {width} -h {height} -t {time} -f {fps}'
             print(command)
             mitk_views = run_in_shell(command, is_python=False)
             print(mitk_views)
-        return (True, '')
+        return (True, f'{output_dir}/{patient}.mp4')
     except Exception as e:
         return (False, f'Error: {e}')
 
@@ -285,23 +302,76 @@ def process_prediction(base_model_dir=None, base_legend_dir=None, base_slices_di
         return (False, {'error': f'Error: {e}'})
 
 
+def upload_video(study_id=None, video_path=None):
+    if study_id is None:
+        return (False, {'error': f'study_id is NULL'})
+    if study_id is None:
+        return (False, {'error': f'video_path is NULL'})
+    
+    if not os.path.exists(video_path):
+        return (False, {'error': f'Path {video_path} does not exist'})
+    try:
+        video_name = video_path.split('/')[-1] 
+        #### Iterate over study_id and build command
+        for study in study_id:
+            command = f'curl --request PUT --data-binary "@{video_path}" https://cidia.ufrgs.dev/storage/v1/exam-media/{study}/3d-video/{video_name}'
+            video = run_in_shell(command, is_python=False)
+            # print(command)
+            print(video)
+        return (True, '')
+    except Exception as e:
+        return (False, f'Error: {e}')
+ 
+def upload_results(url=None, study_id=None, data=None):
+    if url is None:
+        url = API_URL
+    
+    if study_id is None:
+        return (False, {'error': f'study_id is NULL'})
+    if study_id is None:
+        return (False, {'error': f'data is NULL'})
+    
+    try:
+        #### Iterate over study_id and build command
+        output = 1
+        if data['percentage'] < 50.0:
+            output = 2
+        for study in study_id:
+            payload = {'series_id': None, 'study_id': study, 'algorithm_id': 'metadata', 'output': output, 
+                    'metadata': {'name':data['name'], 'radiology': '', 'volume_rendering': data['percentage']}}
+            r = requests.post(url, data=json.dumps(payload))
+            # print(payload)
+            print(r)
+        return (True, '')
+    except Exception as e:
+        return (False, f'Error: {e}')
+
+
+
 if __name__ == "__main__":
     df = get_status_csv()
     list_patients = check_new_patients(df, BASE_DICOM_INPUT_DIR)
     for patient in list_patients:
         print(patient)
+        print('Init time: ' + time.strftime("%Y-%m-%d %H:%M:%S"))
         # CALL DICOM -> NIFTI
         # a = '/home/noa/Documents/UFRGS/PROJECTS/CIDIA19/test-script/data/dicom-original/exame-pulmao'
         # b = '/home/noa/Documents/UFRGS/PROJECTS/CIDIA19/test-script/data/nii-original/exame-pulmao'
         a, b = None, None
         if len(patient) < 5: is_hmv = True
         else: is_hmv = False
+        
+        study_id = None
+        
         bool_result, text_out = convert_dicom_to_nifti(base_input_dir=a, base_output_dir=b, patient=patient, is_hmv=is_hmv)
         if bool_result:
             df = insert_or_update_row(df, patient=patient, column='to_nifti', value=True)
+            df = insert_or_update_row(df, patient=patient, column='study_id', value=text_out)
+            study_id = text_out
         else:
             print(text_out)
-    
+        print('Convert dicom -> nifti: ' + time.strftime("%Y-%m-%d %H:%M:%S"))
+        
         # CALL PHNN SEGMENTATION
         # c = '/home/noa/Documents/UFRGS/PROJECTS/CIDIA19/test-script/data/nii-segmented/exame-pulmao'
         c = None
@@ -310,17 +380,20 @@ if __name__ == "__main__":
             df = insert_or_update_row(df, patient=patient, column='segmented', value=True)
         else:
             print(f'message from phnn segmentation: {text_out}')
+        print('Segment nifti: ' + time.strftime("%Y-%m-%d %H:%M:%S"))
 
         # CALL MITK VIEWS
         # d = '/home/noa/Documents/UFRGS/PROJECTS/CIDIA19/test-script/data/slices2d/exame-pulmao'
         # e = '/home/noa/Documents/UFRGS/PROJECTS/CIDIA19/test-script/data/tf/tf12_2.xml'
         d, e = None, None
+        
         bool_result, text_out = mitk_views_maker(base_nii_dir=c, base_output_dir=d, patient=patient, tf_path=e, width=None, height=None, slices=None, axis=None)
         if bool_result:
             df = insert_or_update_row(df, patient=patient, column='to_slices_3d', value=True)
         else:
             print(text_out)
-
+        print('slices 2d: ' + time.strftime("%Y-%m-%d %H:%M:%S"))
+        
         # CALL MITK VIDEOS
         # f = '/home/noa/Documents/UFRGS/PROJECTS/CIDIA19/test-script/data/videos'
         f = None
@@ -329,7 +402,12 @@ if __name__ == "__main__":
             df = insert_or_update_row(df, patient=patient, column='to_video', value=True)
         else:
             print(text_out)
-
+        print('Videos: ' + time.strftime("%Y-%m-%d %H:%M:%S"))
+        
+        bool_result, text_out = upload_video(study_id=study_id, video_path=text_out)
+        if not bool_result:
+            print(text_out)
+        
         # CALL PROCESS PREDICT
         g, h = None, None
         w, h, ax, cl = None, None, None, None
@@ -340,9 +418,16 @@ if __name__ == "__main__":
             df = insert_or_update_row(df, patient=patient, column='axis_detail', value=text_out['axis_detail'])
             df = insert_or_update_row(df, patient=patient, column='axis_qty', value=text_out['axis_qty'])
             print(df)
+            
+            u = None
+            text_out['name'] = patient
+            bool_result, text_out = upload_results(url=u, study_id=study_id, data=text_out)
+            if not bool_result:
+                print(text_out)
         else:
             print(text_out['error'])
-
+        print('Prediction: ' + time.strftime("%Y-%m-%d %H:%M:%S"))
+        
     save_status_csv(df)
 
     
