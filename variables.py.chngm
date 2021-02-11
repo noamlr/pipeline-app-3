@@ -1,4 +1,7 @@
 # DEFAULT BASE DIRS
+GENERAL_DISPLAY=":0"
+PYTHON_PATH="/path/to/env/python"
+CONDA_ENV_NAME="conda_env_name"
 
 # LOG AND RESULTS CSV FILE
 BASE_LOG_CSV_PATH = '/path/to/log/status.csv'
@@ -20,7 +23,7 @@ PHNN_BATCH_SIZE = 10
 BASE_MITK_VIDEO_OUTPUT_DIR = '/path/by/default/to/mitk/videos'
 BASE_MITK_VIEWS_OUTPUT_DIR = '/path/by/default/to/slices/exame-pulmao'
 MITK_TRANSFER_FUNCTION_PATH = 'path/to/mitk/transfer/function/transfer-function.xml'
-MITK_VIDEO_EXECUTABLE_PATH = '/home/noa/Documents/UFRGS/PROJECTS/CIDIA19/covid-gui-old/examples/VideoMaker/build/videomaker' 
+MITK_VIDEO_EXECUTABLE_PATH = '/path/to/mitk/video/executable' 
 MITK_VIDEO_WIDTH = 512 #px
 MITK_VIDEO_HEIGHT = 450 #px
 MITK_VIDEO_TIME = 10.0 # In seconds

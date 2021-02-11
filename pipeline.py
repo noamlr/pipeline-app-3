@@ -57,11 +57,10 @@ def insert_or_update_row(df, patient=None, column=None, value=None):
         
 
 def run_in_shell(command, is_python=False): 
-    # subprocess.call(f'eval "$(conda shell.bash hook)" && conda activate py36 && echo $CONDA_DEFAULT_ENV && {command} && conda deactivate', shell=True,  executable="/bin/bash")
     if is_python is True:
-        process = subprocess.Popen(f'eval "$(conda shell.bash hook)" && conda activate py36 && echo $CONDA_DEFAULT_ENV && {command} && conda deactivate', shell=True,  executable="/bin/bash")
+        process = subprocess.Popen(f'eval "$(conda shell.bash hook)" && conda activate {CONDA_ENV_NAME} && echo $CONDA_DEFAULT_ENV && {command} && conda deactivate', shell=True,  executable="/bin/bash")
     else:
-        process = subprocess.Popen(f'export DISPLAY=:1 && {command}', shell=True,  executable="/bin/bash")
+        process = subprocess.Popen(f'export DISPLAY={GENERAL_DISPLAY} && {command}', shell=True,  executable="/bin/bash")
         # process = subprocess.Popen(command, shell=True,  stdout=subprocess.PIPE)
     process.wait()
     print(process.returncode)
@@ -151,7 +150,7 @@ def phnn_segmentation(base_nii_dir=None, base_output_dir=None, patient=None, thr
         batch_size = PHNN_BATCH_SIZE
         
     try:
-        command = f'python {PHNN_EXECUTABLE_PATH} --directory_in {input_dir} --directory_out {output_dir} --batch_size {batch_size} --threshold {threshold}'
+        command = f'{PYTHON_PATH} {PHNN_EXECUTABLE_PATH} --directory_in {input_dir} --directory_out {output_dir} --batch_size {batch_size} --threshold {threshold}'
         print(command)
         phnn_seg = run_in_shell(command, is_python=True)
         print(phnn_seg)
@@ -348,16 +347,15 @@ def upload_results(url=None, study_id=None, data=None):
 
 
 
-if __name__ == "__main__":
+def run_pipeline(patient_list=None):
     df = get_status_csv()
-    list_patients = check_new_patients(df, BASE_DICOM_INPUT_DIR)
-    for patient in list_patients:
+    # list_patients = check_new_patients(df, BASE_DICOM_INPUT_DIR)
+    result = {'success': True, 'detail': ''}
+    for patient in patient_list:
         print(patient)
         print('Init time: ' + time.strftime("%Y-%m-%d %H:%M:%S"))
         # CALL DICOM -> NIFTI
-        # a = '/home/noa/Documents/UFRGS/PROJECTS/CIDIA19/test-script/data/dicom-original/exame-pulmao'
-        # b = '/home/noa/Documents/UFRGS/PROJECTS/CIDIA19/test-script/data/nii-original/exame-pulmao'
-        a, b = None, None
+        a, b = None, None #dicom_path, nii_path
         if len(patient) < 5: is_hmv = True
         else: is_hmv = False
         
@@ -369,44 +367,45 @@ if __name__ == "__main__":
             df = insert_or_update_row(df, patient=patient, column='study_id', value=text_out)
             study_id = text_out
         else:
-            print(text_out)
+            result['success'] = False
+            result['detail'] += f'Dicom to nifti: {text_out}'
         print('Convert dicom -> nifti: ' + time.strftime("%Y-%m-%d %H:%M:%S"))
         
         # CALL PHNN SEGMENTATION
-        # c = '/home/noa/Documents/UFRGS/PROJECTS/CIDIA19/test-script/data/nii-segmented/exame-pulmao'
-        c = None
+        c = None # nii_segmented_path
         bool_result, text_out = phnn_segmentation(base_nii_dir=b, base_output_dir=c, patient=patient, threshold=None, batch_size=None)
         if bool_result:
             df = insert_or_update_row(df, patient=patient, column='segmented', value=True)
         else:
-            print(f'message from phnn segmentation: {text_out}')
+            result['success'] = False
+            result['detail'] += f'\nPhnn segmentation: {text_out}'
         print('Segment nifti: ' + time.strftime("%Y-%m-%d %H:%M:%S"))
 
         # CALL MITK VIEWS
-        # d = '/home/noa/Documents/UFRGS/PROJECTS/CIDIA19/test-script/data/slices2d/exame-pulmao'
-        # e = '/home/noa/Documents/UFRGS/PROJECTS/CIDIA19/test-script/data/tf/tf12_2.xml'
-        d, e = None, None
+        d, e = None, None # slices_path, tf_file_path
         
         bool_result, text_out = mitk_views_maker(base_nii_dir=c, base_output_dir=d, patient=patient, tf_path=e, width=None, height=None, slices=None, axis=None)
         if bool_result:
             df = insert_or_update_row(df, patient=patient, column='to_slices_3d', value=True)
         else:
-            print(text_out)
+            result['success'] = False
+            result['detail'] += f'\nSlices 2d: {text_out}'
         print('slices 2d: ' + time.strftime("%Y-%m-%d %H:%M:%S"))
         
         # CALL MITK VIDEOS
-        # f = '/home/noa/Documents/UFRGS/PROJECTS/CIDIA19/test-script/data/videos'
-        f = None
+        f = None # videos_path
         bool_result, text_out = mitk_video_maker(base_nii_dir=c, base_output_dir=f, patient=patient, tf_path=e, width=None, height=None, time=None, fps=None)
         if bool_result:
             df = insert_or_update_row(df, patient=patient, column='to_video', value=True)
         else:
-            print(text_out)
+            result['success'] = False
+            result['detail'] += f'\nVideo: {text_out}'
         print('Videos: ' + time.strftime("%Y-%m-%d %H:%M:%S"))
         
         bool_result, text_out = upload_video(study_id=study_id, video_path=text_out)
         if not bool_result:
-            print(text_out)
+            result['success'] = False
+            result['detail'] += f'\nUpload video: {text_out}'
         
         # CALL PROCESS PREDICT
         g, h = None, None
@@ -423,13 +422,47 @@ if __name__ == "__main__":
             text_out['name'] = patient
             bool_result, text_out = upload_results(url=u, study_id=study_id, data=text_out)
             if not bool_result:
-                print(text_out)
+                result['success'] = False
+                result['detail'] += f'\nUpload result: {text_out}'
         else:
-            print(text_out['error'])
+            result['success'] = False
+            result['detail'] += f'\nPrediction process: {text_out}'
         print('Prediction: ' + time.strftime("%Y-%m-%d %H:%M:%S"))
         
     save_status_csv(df)
+    return result
 
-    
 
 
+###################################################
+## Flask service
+###################################################
+#!flask/bin/python
+from flask import Flask
+from flask import request
+import json
+import sys
+
+app = Flask(__name__)
+
+@app.route('/pipeline3/<ct_path>', methods=['GET'])
+def index(ct_path):
+    if ct_path is not None:
+        results = run_pipeline(patient_list=[ct_path])
+        out = json.dumps(results)
+    return out
+
+
+# Prepare some function for massive and re-use the method
+# @app.route('/pipeline3', methods=['POST'])
+# def index():
+#     if ct_path is not None:
+#         results = run_pipeline(patient_list=[ct_path])
+#         out = json.dumps(results)
+#     return out
+
+
+
+
+# if __name__ == '__main__':
+#     app.run(debug=True)
