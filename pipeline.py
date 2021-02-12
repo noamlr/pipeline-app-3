@@ -295,6 +295,7 @@ def process_prediction(base_model_dir=None, base_legend_dir=None, base_slices_di
         model_name = 'resnet101'
         model_cidia = ModelCidia(base_model_dir, base_legend_dir, base_slices_dir, model_name, width, height)
         bool_status, result = model_cidia.test_patient(axis, patient)
+        del model_cidia
         if not bool_status:
             return (False, result)
         return (True, result)
@@ -425,12 +426,13 @@ def run_pipeline(patient_list=None):
             if not bool_result:
                 result['success'] = False
                 result['detail'] += f'\nUpload result: {text_out}'
+            else: #Success -> save dataframe
+                save_status_csv(df)
         else:
             result['success'] = False
             result['detail'] += f'\nPrediction process: {text_out}'
         print('Prediction: ' + time.strftime("%Y-%m-%d %H:%M:%S"))
         
-    save_status_csv(df)
     return result
 
 
