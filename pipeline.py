@@ -20,6 +20,7 @@ def get_status_csv():
     else:
         df = pd.read_csv(BASE_LOG_CSV_PATH)
         df = df.reset_index(drop=True)
+    df = df.astype({"name": str, "predicted": str, "percentage": float, "axis_qty": int})
     return df
 
 
