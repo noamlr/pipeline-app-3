@@ -5,6 +5,7 @@ import os
 import pandas as pd
 import json
 import requests
+import pickle
 
 import subprocess
 import shutil
@@ -293,10 +294,17 @@ def process_prediction(base_model_dir=None, base_legend_dir=None, base_slices_di
     try:
         #### Iterate over nifti and build command
         model_name = 'resnet101'
-        model_cidia = ModelCidia(base_model_dir, base_legend_dir, base_slices_dir, model_name, width, height)
-        bool_status, result = model_cidia.test_patient(axis, patient)
-        del model_cidia
-        if not bool_status:
+        command = f'{PYTHON_PATH} models.py --md {base_model_dir} --ld {base_legend_dir} --sd {base_slices_dir} --mn {model_name} --w {width} --h {height} --a {axis} --p {patient}'
+        print(command)
+        pred = run_in_shell(command, is_python=True)
+        print(pred)
+        result = None
+        with open('prediction_result.pkl', 'rb') as pr:
+            result = pickle.load(pr)
+        # model_cidia = ModelCidia(base_model_dir, base_legend_dir, base_slices_dir, model_name, width, height)
+        # bool_status, result = model_cidia.test_patient(axis, patient)
+
+        if result is None or result['success'] is False:
             return (False, result)
         return (True, result)
     except Exception as e:

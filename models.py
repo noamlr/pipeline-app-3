@@ -2,6 +2,7 @@ import numpy as np
 import pandas as pd
 import glob
 import os
+import pickle
 from tensorflow.keras.preprocessing.image import ImageDataGenerator 
 from tensorflow.keras.applications import ResNet101
 from tensorflow import device
@@ -58,7 +59,7 @@ class ModelCidia():
 
     def test_patient(self, axis, patient):
         try:
-            result = {}
+            result = {'success': True}
             prediction = []
             total_images = 0
             positive_count = []
@@ -78,7 +79,7 @@ class ModelCidia():
                 self.MODEL = load_model(f'{self.MODEL_PATH}/{axis_name}/my_checkpoint')
                 patient_dir = f'{self.SLICES_PATH}/{patient}/{axis_name}/'
                 if not os.path.exists(patient_dir):
-                    return (False, {'error': f'Path: {patient_dir} does not exist'})
+                    return {'success': False, 'error': f'Path: {patient_dir} does not exist'}
                 imgs_filename = sorted(os.listdir(patient_dir))
                 test_filenames = imgs_filename[:] 
                 test_df = pd.DataFrame({'filename': test_filenames})
@@ -119,11 +120,11 @@ class ModelCidia():
                 result['predicted'] = 'non covid'
             else: 
                 result['predicted'] = 'covid'
-            return (True, result)
+            return result
 
         except Exception as e:
             et, eo, et = sys.exc_info()
-            return (False, {'error':f'error: {e}\n\n{et}\n\n{eo}\n\n{et}'})
+            return {'success':False, 'error':f'error: {e}\n\n{et}\n\n{eo}\n\n{et}'}
             
 
     def get_file_path(self, search_filter=''):
@@ -158,4 +159,31 @@ class ModelCidia():
 
         return data_generator
 
+if __name__ == "__main__":
+    import argparse
+    import os
+    parser = argparse.ArgumentParser(description='Test model.')
 
+    parser.add_argument('--md', type=str, required=True,
+                        help='path to model')
+    parser.add_argument('--ld', type=str, required=True,
+                        help='path to legend')
+    parser.add_argument('--sd', type=str, required=True,
+                        help='path to slices')
+    parser.add_argument('--mn', type=str, required=False,
+                        default='resnet101', help='model name')
+    parser.add_argument('--a', type=int, required=True,
+                        help='Axis to use')
+    parser.add_argument('--p', type=str, required=True,
+                        help='Patient name')
+    parser.add_argument('--w', type=int, required=False,
+                        default=448, help='width')
+    parser.add_argument('--h', type=int, required=False,
+                        default=448, help='height')
+
+    args = parser.parse_args()
+    model_cidia = ModelCidia(args.md, args.ld, args.sd, args.mn, args.w, args.h)
+    res = model_cidia.test_patient(args.a, args.p)
+    with open('prediction_result.pkl', 'wb') as pr:
+        pickle.dump(res, pr)
+    del model_cidia
