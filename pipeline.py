@@ -443,6 +443,50 @@ def run_pipeline(patient_list=None):
         
     return result
 
+def convert_and_segment(patient_list=None):
+    df = get_status_csv()
+    # list_patients = check_new_patients(df, BASE_DICOM_INPUT_DIR)
+    result = {'success': True, 'detail': ''}
+    for patient in patient_list:
+        print(patient)
+        print('Init time: ' + time.strftime("%Y-%m-%d %H:%M:%S"))
+        # CALL DICOM -> NIFTI
+        a, b = None, None #dicom_path, nii_path
+        if len(patient) < 5: is_hmv = True
+        else: is_hmv = False
+        
+        study_id = None
+        
+        bool_result, text_out = convert_dicom_to_nifti(base_input_dir=a, base_output_dir=b, patient=patient, is_hmv=is_hmv)
+        if bool_result:
+            df = insert_or_update_row(df, patient=patient, column='to_nifti', value=True)
+            df = insert_or_update_row(df, patient=patient, column='study_id', value=text_out)
+            study_id = text_out
+        else:
+            result['success'] = False
+            result['detail'] += f'Dicom to nifti: {text_out}'
+        print('Convert dicom -> nifti: ' + time.strftime("%Y-%m-%d %H:%M:%S"))
+        
+        # CALL PHNN SEGMENTATION
+        c = None # nii_segmented_path
+        bool_result, text_out = phnn_segmentation(base_nii_dir=b, base_output_dir=c, patient=patient, threshold=None, batch_size=None)
+        if bool_result:
+            df = insert_or_update_row(df, patient=patient, column='segmented', value=True)
+            # To save data
+            df = insert_or_update_row(df, patient=patient, column='to_slices_3d', value=False)
+            df = insert_or_update_row(df, patient=patient, column='to_video', value=False)
+            df = insert_or_update_row(df, patient=patient, column='predicted', value='')
+            df = insert_or_update_row(df, patient=patient, column='percentage', value=0.0)
+            df = insert_or_update_row(df, patient=patient, column='axis_detail', value=[])
+            df = insert_or_update_row(df, patient=patient, column='axis_qty', value=0)
+            save_status_csv(df)
+        else:
+            result['success'] = False
+            result['detail'] += f'\nPhnn segmentation: {text_out}'
+        print('Segment nifti: ' + time.strftime("%Y-%m-%d %H:%M:%S"))
+
+    return result
+
 
 
 ###################################################
@@ -464,14 +508,12 @@ def index(ct_path):
     return out
 
 
-# Prepare some function for massive and re-use the method
-# @app.route('/pipeline3', methods=['POST'])
-# def index():
-#     if ct_path is not None:
-#         results = run_pipeline(patient_list=[ct_path])
-#         out = json.dumps(results)
-#     return out
-
+@app.route('/segment/<ct_path>', methods=['GET'])
+def segment(ct_path):
+    if ct_path is not None:
+        results = convert_and_segment(patient_list=[ct_path])
+        out = json.dumps(results)
+    return out
 
 
 
