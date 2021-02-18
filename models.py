@@ -57,7 +57,7 @@ class ModelCidia():
         except:
             return (False, 'Error getting model')
 
-    def test_patient(self, axis, patient):
+    def test_patient(self, axis):
         try:
             result = {'success': True}
             prediction = []
@@ -77,7 +77,7 @@ class ModelCidia():
                 
                 axis_name = f'axis{t_axis}'
                 self.MODEL = load_model(f'{self.MODEL_PATH}/{axis_name}/my_checkpoint')
-                patient_dir = f'{self.SLICES_PATH}/{patient}/{axis_name}/'
+                patient_dir = f'{self.SLICES_PATH}/{axis_name}/'
                 if not os.path.exists(patient_dir):
                     return {'success': False, 'error': f'Path: {patient_dir} does not exist'}
                 imgs_filename = sorted(os.listdir(patient_dir))
@@ -174,8 +174,6 @@ if __name__ == "__main__":
                         default='resnet101', help='model name')
     parser.add_argument('--a', type=int, required=True,
                         help='Axis to use')
-    parser.add_argument('--p', type=str, required=True,
-                        help='Patient name')
     parser.add_argument('--w', type=int, required=False,
                         default=448, help='width')
     parser.add_argument('--h', type=int, required=False,
@@ -183,7 +181,7 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
     model_cidia = ModelCidia(args.md, args.ld, args.sd, args.mn, args.w, args.h)
-    res = model_cidia.test_patient(args.a, args.p)
+    res = model_cidia.test_patient(args.a)
     with open('prediction_result.pkl', 'wb') as pr:
         pickle.dump(res, pr)
     del model_cidia
