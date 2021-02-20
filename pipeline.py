@@ -343,11 +343,11 @@ if __name__ == "__main__":
             segmented_path = result['nii_segmented_path']
         else:
             print(result)
-    with open('/data/pipeline_result.pkl', 'wb') as pr:
-        pickle.dump(result, pr)
+    with open('/data/pipeline_result.json', 'w') as pr:
+        json.dump(result, pr)
     
     if args.full_pipeline is True or args.third_approach is True:
         result = run_third_approach(nii_segmented_dir=segmented_path)
         print(result)
-    with open('/data/pipeline_result.pkl', 'wb') as pr:
-        pickle.dump(result, pr)
+    with open('/data/pipeline_result.json', 'w') as pr:
+        json.dump(result, pr)
