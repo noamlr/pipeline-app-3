@@ -343,11 +343,14 @@ if __name__ == "__main__":
             segmented_path = result['nii_segmented_path']
         else:
             print(result)
-    with open('/data/pipeline_result.json', 'w') as pr:
+    file_out = os.getenv('OUTPUT')
+    if file_out is None or len(file_out) == 0:
+        file_out = 'pipeline_result.json'
+    with open(f'/data/{file_out}', 'w') as pr:
         json.dump(result, pr)
     
     if args.full_pipeline is True or args.third_approach is True:
         result = run_third_approach(nii_segmented_dir=segmented_path)
         print(result)
-    with open('/data/pipeline_result.json', 'w') as pr:
+    with open(f'/data/{file_out}', 'w') as pr:
         json.dump(result, pr)
