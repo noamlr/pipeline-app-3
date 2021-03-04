@@ -328,6 +328,7 @@ if __name__ == "__main__":
     parser.add_argument('--convert_and_segment', required=False, default=False, help='Process only convert and segmentation', action='store_true')
     parser.add_argument('--third_approach', required=False, default=False, help='Process only convert and segmentation', action='store_true')
     parser.add_argument('--full_pipeline', required=False, default=False, help='Process only prediction', action='store_true')
+    parser.add_argument('--output', required=False, default='pipeline_result.json', help='file to save output, .json')
     
     args = parser.parse_args()
 
@@ -343,9 +344,7 @@ if __name__ == "__main__":
             segmented_path = result['nii_segmented_path']
         else:
             print(result)
-    file_out = os.getenv('OUTPUT')
-    if file_out is None or len(file_out) == 0:
-        file_out = 'pipeline_result.json'
+    file_out = args.output
     with open(f'/data/{file_out}', 'w') as pr:
         json.dump(result, pr)
     
